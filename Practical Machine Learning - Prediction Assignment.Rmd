@@ -1,0 +1,137 @@
+---
+title: "Practical Machine Learning - Assignment 1"
+author: "Arthi Murugesan"
+date: "March 27, 2016"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Introduction
+
+In this report, we will be analysing the personal activity of 6 participants, doing barbell lifts in 5 different ways. We will try to see given an accelerometer reading on the belt, forearm,arm and dumbell, which of the 5 lifts are being perfomed.
+
+The dataset used for the analysis is available at http://groupware.les.inf.puc-rio.br/har and more information regarding the dataset is available at [1]
+
+#Exploratory Data Analysis
+
+The data set consist of totally 160 values including the user name and classe. Let's take a deeper look at the 160 parameters provided to check if they all consist of non NA values. If there are any columns with no values provided anywhere, it's clear they add no value to be use in the model training process, so we can remove them from the training set. Similarly the columns which were not used in the training are not going to be useful in predictions, Hence can also be removed from the test set. Also, personal identifiers such as user name, or the timestamp does not add any value related to the activity, Hence they can also be removed from the training and test set.
+
+There are totally 5 different types of practical activity that are captured and the classe encodes these differences. Our Models will be predicting these 5 different barbell lifts (classe), given the other parameters. 
+
+```{r initial}
+rm(list=ls())
+training_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testing_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(training_url, destfile = "pml-training.csv", method="curl", mode="wb")
+download.file(testing_url, destfile = "pml-testing.csv", method="curl", mode="wb")
+
+training_data <- read.csv("pml-training.csv",header=T, na.strings=c("NA", "#DIV/0!"),stringsAsFactors=T)
+
+test_data <- read.csv("pml-testing.csv", header=T, na.strings=c("NA", "#DIV/0!"),stringsAsFactors=T)
+
+dim(training_data)
+dim(test_data)
+
+summary(training_data$classe)
+summary(training_data$user_name)
+
+# Removing Parameters which hold no value
+col_sum <- colSums(is.na(training_data))
+reduced_training_data <- training_data[,colSums(is.na(training_data))==0]
+reduced_test_data <- test_data[,colSums(is.na(training_data))==0]
+
+#Removing Parameters which are not related to classe
+clean_training_data <- reduced_training_data[,-c(1:7)]
+test <- reduced_test_data[,-c(1:7)]
+```
+
+##Training
+
+The training set is split into 75-25 for training and dev set. We will use cross validation in training and evaluate the model perfomance on the dev set. Finally once we have picked the model parameters using dev set, we will evaluate our model over the blind set, namely the test set (20 testcases) to see how the model performs. This follows the usual practice of model training, evaluation and testing.
+
+```{r data_partition}
+library(caret)
+set.seed(123)
+inTrain <- createDataPartition(clean_training_data$classe, p = .75, list = FALSE)
+training <- clean_training_data[inTrain,]
+dev_test <- clean_training_data[-inTrain,]
+```
+
+##Decision Trees
+
+We will start with Decision Trees, as they are simple and parsimonious models.
+
+```{r decision_trees}
+
+library(rpart)
+library(rpart.plot)
+#Cross Validation & Model Training
+
+model_decisiontree <- rpart(classe ~ ., data=training, method="class")
+
+# Predicting:
+predict_dt <- predict(model_decisiontree, dev_test, type = "class")
+
+# Plot of the Decision Tree
+rpart.plot(model_decisiontree, main="Decision Tree", extra=102, under=TRUE, faclen=0)
+
+#confusion matrix
+confusionMatrix(predict_dt, dev_test$classe)
+```
+
+The decision trees have a prediction accuracy of 74.86% of the dev set.According to the model,roll_belt seems to the main predictive parameter.
+
+##Random Forest
+
+Following up on the simple decision tree model perfomance, random forest will be used to gain some ground. As for the cross validation, we will use Out-of-Bag cross validation method as it is specifically good for random forests (also useful with bagged trees, condition tree forest models etc).
+
+```{r random_forest}
+
+# Cross Validation using out of bag & Model Training
+cross_validation_rf <- trainControl(method="oob",number=10,repeats=5,p=0.75)
+model_rf <- suppressMessages(train(classe ~ ., method="rf", data=training, trControl=cross_validation_rf))
+
+#Model Prediction
+predict_rf <- predict(model_rf$finalModel,newdata=dev_test)
+
+#Confusion Matrix
+confusionMatrix(predict_rf,dev_test$classe)$overall
+
+# plot the Out of bag error estimates
+plot(model_rf$finalModel,log="y", main ="OOB error estimate per No of Trees")
+```
+
+The accuracy of random forest models on the dev set is 99.29% on the dev set. In comparison with the accruacy of decision trees at 74.86%, the random forest models seems to perform good on the dev set.
+
+
+#Blind Test
+
+The blind test of 20 testcases are to be evaluated with the best models and uploaded for grading. Hence we will use Random Forest models (which have the best perfomance overall).
+
+```{r blind_test}
+
+#Random Forest
+predict_rf_test <- predict(model_rf$finalModel,newdata=test)
+
+
+write_prediction_to_file = function(x){
+  n = length(x)
+  for(i in 1:n){
+    file_name = paste0("testcase_no_",i,".txt")
+    write.table(x[i],file=file_name,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+write_prediction_to_file(predict_rf_test)
+```
+
+#Conclusion
+
+To conclude, for the 6 participant and 5 different action data, given accelerometer reading on the belt, forearm,arm and dumbell. We were able to predict the action with a high accuracy using random forests. Decison Trees did not provide as good a prediction in comparision to Random Trees for this task.
+
+#Bibliography
+
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. - Qualitative Activity Recognition of Weight Lifting Exercises: Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human ’13) . Stuttgart, Germany: ACM SIGCHI, 2013.
