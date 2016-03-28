@@ -2,7 +2,7 @@
 title: "Practical Machine Learning - Assignment 1"
 author: "Arthi Murugesan"
 date: "March 27, 2016"
-output: pdf_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
